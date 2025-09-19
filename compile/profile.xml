@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<Profile FormatVersion="1">
+  <Tools>
+    <Tool Filename="make" AllowIntercept="true" />
+    <Tool Filename="cl" AllowRemote="true" DeriveCaptionFrom="lastparam" VCCompiler="True"/>
+    <Tool Filename="link" AllowRemote="false" DeriveCaptionFrom="firstparam" />
+  </Tools>
+</Profile>
+

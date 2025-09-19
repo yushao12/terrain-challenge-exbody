@@ -1,0 +1,10 @@
+.SUFFIXES = .cpp .obj
+
+%.obj : %.cpp
+	$(CC) $(CXXFLAGS) $(CPPFLAGS) /Fo$@ /c $<
+
+$(TARGET) : $(OFILES)
+	LINK /out:$(TARGET) $(LFLAGS) $(OFILES) $(LIBS)
+	mt -nologo -manifest $(TARGET).manifest -outputresource:$(TARGET);
+
+all: $(TARGET)

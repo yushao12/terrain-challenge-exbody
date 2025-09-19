@@ -1,0 +1,7 @@
+isaacgym*
+.ipynb_checkpoints/
+.vscode/
+*img
+*__pycache__*
+fbx/
+**/__pycache__/

@@ -1,0 +1,46 @@
+======================================
+
+Autodesk FBX Python Bindings Installation Instructions
+
+======================================
+
+INTRODUCTION
+
+This file describes the installation procedure
+for the Autodesk FBX Python Bindings version 2020.3.2.
+______________________________________
+PACKAGE CONTENT
+
+The distribution .tar file contains the following files:
+    - Install_FbxPythonBindings.txt: This file.
+    - FBX202032_FBXPYTHONBINDINGS_LINUX: The FBX Python Bindings version 2020.3.2
+      installation program.
+______________________________________  
+INSTALLATION INSTRUCTIONS
+
+The installation program will install the FBX Python Bindings under
+the specified directory.
+
+1) Make sure you have execution permission on the installation
+   program (FBX202032_FBXPYTHONBINDINGS_LINUX):
+      % chmod ugo+x FBX202032_FBXPYTHONBINDINGS_LINUX
+      
+2) Execute the installation program. You must provide an
+   installation directory as a parameter. For example, if
+   you wish to install the FBX Python Bindings under /usr/FBX202032_FBXPYTHONBINDINGS_LINUX
+   type the following commands:
+      % mkdir /usr/FBX202032_FBXPYTHONBINDINGS_LINUX
+      % ./FBX202032_FBXPYTHONBINDINGS_LINUX /usr/FBX202032_FBXPYTHONBINDINGS_LINUX
+      
+   Note that you must agree to the terms of the END USER
+   LICENSE AGREEMENT in order to complete the installation.
+______________________________________
+FOR MORE INFORMATION
+
+Please read the accompanying readme.txt file for more details
+on the new features and known limitations of this version
+of the FBX Python Bindings.
+
+Thank you for using the FBX Python Bindings,
+The FBX SDK Team.
+
