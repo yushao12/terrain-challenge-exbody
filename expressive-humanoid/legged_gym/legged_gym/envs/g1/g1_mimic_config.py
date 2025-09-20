@@ -130,13 +130,27 @@ class G1MimicCfg( LeggedRobotCfg ):
     class asset( LeggedRobotCfg.asset ):
         file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/g1/g1_12dof_with_hand.urdf'
         name = "g1_fix_upper"
-        torso_name = "pelvis"  # 这个参数是必需的
+        torso_name = "pelvis"  # 这个参数是必需的，用于兼容H1的算法逻辑
         foot_name = "ankle_roll"
         knee_name = "knee"
         penalize_contacts_on = ["hip", "knee"]
         terminate_after_contacts_on = ["pelvis"]
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         flip_visual_attachments = False
+        
+        # 参考原项目的设置
+        density = 0.001
+        angular_damping = 0.
+        linear_damping = 0.
+        max_angular_velocity = 1000.
+        max_linear_velocity = 1000.
+        armature = 0.
+        thickness = 0.01
+        disable_gravity = False
+        fix_base_link = False  # 允许基座移动
+        collapse_fixed_joints = True  # 参考原项目，合并固定关节
+        replace_cylinder_with_capsule = True
+        default_dof_drive_mode = 3  # effort mode
 
     class rewards( LeggedRobotCfg.rewards ):
         class scales:

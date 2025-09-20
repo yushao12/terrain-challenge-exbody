@@ -65,7 +65,8 @@ class G1Mimic(LeggedRobot):
         else:
             self.device = 'cpu'
         
-        self.init_motions(cfg)
+        # 先初始化基本motion参数（不依赖simulation）
+        self._init_basic_motion_params(cfg)
         if cfg.motion.num_envs_as_motions:
             self.cfg.env.num_envs = 1  # G1暂时没有motion数据，保持原配置
         
@@ -76,6 +77,13 @@ class G1Mimic(LeggedRobot):
 
         if not self.headless:
             self.set_camera(self.cfg.viewer.pos, self.cfg.viewer.lookat)
+        
+        # 在BaseTask初始化后，动态构建DOF映射
+        self._build_g1_dof_mapping()
+        
+        # 重写_create_envs方法以添加调试信息
+        self._debug_create_envs()
+        
         self._init_buffers()
         self._prepare_reward_function()
         
@@ -767,21 +775,88 @@ class G1Mimic(LeggedRobot):
                                               gymtorch.unwrap_tensor(self.dof_state),
                                               gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
     
-    def init_motions(self, cfg):
-        """初始化motion相关参数（G1版本）"""
-        # G1暂时没有motion数据，初始化基本结构
-        self._key_body_ids = torch.tensor([3, 6], device=self.device)  # G1的关键body ids
-        self._key_body_ids_sim = torch.tensor([1, 4, 6, 9], device=self.device)  # G1的sim body ids
-        self._key_body_ids_sim_subset = torch.tensor([0, 1, 2, 3], device=self.device)
-        
-        self._num_key_bodies = len(self._key_body_ids_sim_subset)
-        
-        # G1的DOF索引（12个DOF，直接映射）
-        self.dof_indices_sim = torch.arange(12, device=self.device, dtype=torch.long)
-        self.dof_indices_motion = torch.arange(12, device=self.device, dtype=torch.long)
+    def _init_basic_motion_params(self, cfg):
+        """初始化基本motion参数（不依赖simulation）"""
+        # 初始化基本的motion相关变量
+        self._motion_dt = None  # 将在BaseTask初始化后设置
+        self._motion_num_future_steps = self.cfg.env.n_demo_steps
+        self._motion_demo_offsets = None  # 将在BaseTask初始化后设置
         
         # G1暂时没有motion library，跳过
         pass
+    
+    def init_motions(self, cfg):
+        """初始化motion相关参数（G1版本）"""
+        # 动态识别G1的关键body ids
+        self._build_g1_key_body_ids()
+        
+        # G1暂时没有motion library，跳过
+        pass
+    
+    def _build_g1_key_body_ids(self):
+        """动态构建G1的关键body ids"""
+        # 使用已经在_create_envs中加载的body信息
+        # 注意：这个方法在_create_envs之前调用，所以暂时使用默认值
+        # 实际的body信息会在_create_envs中设置
+        
+        # 使用默认的关键body索引
+        self._key_body_ids = torch.tensor([0, 5, 10], device=self.device)  # pelvis, left_ankle, right_ankle
+        self._key_body_ids_sim = self._key_body_ids.clone()
+        self._key_body_ids_sim_subset = torch.arange(len(self._key_body_ids), device=self.device)
+        self._num_key_bodies = len(self._key_body_ids_sim_subset)
+        
+        print(f"G1 Key body indices: {self._key_body_ids.cpu().numpy()}")
+    
+    def _build_g1_dof_mapping(self):
+        """动态构建G1的DOF索引映射"""
+        # 使用已经在_create_envs中加载的DOF信息
+        print(f"G1 DOF names: {self.dof_names}")
+        
+        # G1有12个DOF，直接映射（因为G1本身就是12DOF机器人）
+        self.dof_indices_sim = torch.arange(self.num_dof, device=self.device, dtype=torch.long)
+        self.dof_indices_motion = torch.arange(self.num_dof, device=self.device, dtype=torch.long)
+        
+        # 为了兼容H1的算法，需要定义_valid_dof_body_ids
+        self._valid_dof_body_ids = torch.ones(self.num_dof, device=self.device, dtype=torch.bool)
+        
+        print(f"G1 DOF mapping: sim={self.dof_indices_sim.cpu().numpy()}, motion={self.dof_indices_motion.cpu().numpy()}")
+        print(f"G1 num_dof: {self.num_dof}")
+    
+    def _debug_create_envs(self):
+        """调试_create_envs方法，检查力传感器创建"""
+        # 获取body名称
+        asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
+        asset_root = os.path.dirname(asset_path)
+        asset_file = os.path.basename(asset_path)
+        
+        # 重新加载asset以获取body信息
+        asset_options = gymapi.AssetOptions()
+        asset_options.default_dof_drive_mode = self.cfg.asset.default_dof_drive_mode
+        asset_options.collapse_fixed_joints = self.cfg.asset.collapse_fixed_joints
+        asset_options.replace_cylinder_with_capsule = self.cfg.asset.replace_cylinder_with_capsule
+        asset_options.flip_visual_attachments = self.cfg.asset.flip_visual_attachments
+        asset_options.fix_base_link = self.cfg.asset.fix_base_link
+        asset_options.density = self.cfg.asset.density
+        asset_options.angular_damping = self.cfg.asset.angular_damping
+        asset_options.linear_damping = self.cfg.asset.linear_damping
+        asset_options.max_angular_velocity = self.cfg.asset.max_angular_velocity
+        asset_options.max_linear_velocity = self.cfg.asset.max_linear_velocity
+        asset_options.armature = self.cfg.asset.armature
+        asset_options.thickness = self.cfg.asset.thickness
+        asset_options.disable_gravity = self.cfg.asset.disable_gravity
+        
+        robot_asset = self.gym.load_asset(self.sim, asset_root, asset_file, asset_options)
+        body_names = self.gym.get_asset_rigid_body_names(robot_asset)
+        
+        print(f"G1 Body names: {body_names}")
+        
+        # 检查脚部链接是否存在
+        for s in ["left_ankle_link", "right_ankle_link"]:
+            try:
+                feet_idx = self.gym.find_asset_rigid_body_index(robot_asset, s)
+                print(f"Found {s} at index {feet_idx}")
+            except Exception as e:
+                print(f"Error finding {s}: {e}")
     
     def init_motion_buffers(self, cfg):
         """初始化motion buffers（G1版本）"""

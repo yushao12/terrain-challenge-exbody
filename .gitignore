@@ -48,3 +48,19 @@ Thumbs.db
 # 忽略大文件
 *.bin
 *.dat
+# FBX SDK相关
+sip/
+fbx202037_fbxsdk_linux*
+*.tar.gz
+*.zip
+CMU_fbx.zip
+
+# Wandb日志
+logs/wandb/
+**/wandb/
+
+# 测试文件
+test_file
+
+# ASE预训练模型（可以重新下载）
+**/models/*.pth
