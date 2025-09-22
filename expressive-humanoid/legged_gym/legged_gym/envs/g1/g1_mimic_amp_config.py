@@ -34,6 +34,22 @@ class G1MimicAMPCfg( G1MimicCfg ):
     class env( G1MimicCfg.env ):
         num_envs = 4096
 
+    class motion:
+        motion_curriculum = True
+        motion_type = "yaml"
+        motion_name = "motions_g1_all.yaml"  # 使用G1的重定向motion数据
+
+        global_keybody = False
+        global_keybody_reset_time = 2
+
+        num_envs_as_motions = False
+
+        no_keybody = False
+        regen_pkl = False
+
+        step_inplace_prob = 0.05
+        resample_step_inplace_interval_s = 10
+
     class amp():
         num_obs_steps = 10
         # 简化观测：dof_pos(12) + local_root_vel(3) + local_root_ang_vel(3) + roll(1) + pitch(1) + root_height(1) + lower_body_key_pos(6*3)

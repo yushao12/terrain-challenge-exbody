@@ -74,15 +74,15 @@ class G1Mimic(LeggedRobot):
         self.cfg.env.num_actions = self.cfg.env.num_policy_actions
         
         BaseTask.__init__(self, self.cfg, sim_params, physics_engine, sim_device, headless)
-
-        if not self.headless:
-            self.set_camera(self.cfg.viewer.pos, self.cfg.viewer.lookat)
         
         # 在BaseTask初始化后，动态构建DOF映射
         self._build_g1_dof_mapping()
         
-        # 重写_create_envs方法以添加调试信息
-        self._debug_create_envs()
+        # 初始化motion library（需要在DOF映射之后）
+        self.init_motions(cfg)
+
+        if not self.headless:
+            self.set_camera(self.cfg.viewer.pos, self.cfg.viewer.lookat)
         
         self._init_buffers()
         self._prepare_reward_function()
@@ -112,9 +112,26 @@ class G1Mimic(LeggedRobot):
     
     def _init_motion_lib(self):
         """初始化motion library"""
-        # G1暂时没有motion数据，先跳过motion library初始化
-        # 后续有retarget数据后再实现
+        # 确保DOF映射已经初始化
+        self._build_g1_dof_mapping()
+        
+        # 确保关键body ids已经初始化
+        self._build_g1_key_body_ids()
+        
+        # 现在可以安全地加载motion数据
+        # 注意：这个方法在init_motions中被调用，motion文件路径已经确定
         pass
+    
+    def _load_motion(self, motion_file, no_keybody=False):
+        """加载motion数据"""
+        self._motion_lib = MotionLib(motion_file=motion_file,
+                                     dof_body_ids=self._dof_body_ids,
+                                     dof_offsets=self._dof_offsets,
+                                     key_body_ids=self._key_body_ids.cpu().numpy(), 
+                                     device=self.device, 
+                                     no_keybody=no_keybody, 
+                                     regen_pkl=self.cfg.motion.regen_pkl)
+        return
     
     def _init_g1_buffers(self):
         """初始化G1特定的缓冲区"""
@@ -255,11 +272,113 @@ class G1Mimic(LeggedRobot):
         
     def _init_buffers(self):
         """初始化缓冲区"""
-        super()._init_buffers()
         # 先初始化G1特定缓冲，提供 target_yaw/next_target_yaw/yaw 等
         self._init_g1_buffers()
+        
+        # 调用父类的_init_buffers，但处理力传感器为None的情况
+        self._init_buffers_with_force_sensor_fix()
+        
         # 再初始化足部状态视图
         self._init_foot()
+    
+    def _init_buffers_with_force_sensor_fix(self):
+        """重写_init_buffers以处理力传感器为None的情况"""
+        # 获取tensor
+        actor_root_state = self.gym.acquire_actor_root_state_tensor(self.sim)
+        dof_state_tensor = self.gym.acquire_dof_state_tensor(self.sim)
+        rigid_body_state_tensor = self.gym.acquire_rigid_body_state_tensor(self.sim)
+        force_sensor_tensor = self.gym.acquire_force_sensor_tensor(self.sim)
+        net_contact_forces = self.gym.acquire_net_contact_force_tensor(self.sim)
+        
+        # 创建一些wrapper tensors用于不同的切片
+        self.root_states = gymtorch.wrap_tensor(actor_root_state)
+        self.rigid_body_states = gymtorch.wrap_tensor(rigid_body_state_tensor).view(self.num_envs, -1, 13)
+        self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
+        self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
+        self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
+        self.base_quat = self.root_states[:, 3:7]
+        
+        # 处理力传感器tensor - 如果为None则创建空的tensor
+        if force_sensor_tensor is not None:
+            wrapped_tensor = gymtorch.wrap_tensor(force_sensor_tensor)
+            if wrapped_tensor is not None:
+                self.force_sensor_tensor = wrapped_tensor.view(self.num_envs, 2, 6)
+            else:
+                # gymtorch.wrap_tensor返回None，创建空的tensor
+                self.force_sensor_tensor = torch.zeros(self.num_envs, 2, 6, device=self.device, dtype=torch.float)
+                print("Warning: gymtorch.wrap_tensor returned None, using empty tensor")
+        else:
+            # 创建空的力传感器tensor
+            self.force_sensor_tensor = torch.zeros(self.num_envs, 2, 6, device=self.device, dtype=torch.float)
+            print("Warning: Force sensor tensor is None, using empty tensor")
+        
+        self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1, 3)
+        
+        # 初始化一些稍后使用的数据
+        self.common_step_counter = 0
+        self.extras = {}
+        self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
+        self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
+        self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
+        self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.p_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.d_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        
+        # 初始化last actions和last dof vel
+        self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_dof_vel = torch.zeros_like(self.dof_vel)
+        self.last_root_vel = torch.zeros_like(self.root_states[:, 7:13])
+        self.last_torques = torch.zeros_like(self.torques)
+        
+        # 初始化goal相关缓冲区
+        self.reach_goal_timer = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        
+        # 初始化motor strength
+        str_rng = self.cfg.domain_rand.motor_strength_range
+        self.motor_strength = (str_rng[1] - str_rng[0]) * torch.rand(2, self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False) + str_rng[0]
+        
+        # 初始化history buffers
+        if self.cfg.env.history_encoding:
+            self.obs_history_buf = torch.zeros(self.num_envs, self.cfg.env.history_len, self.cfg.env.n_proprio, device=self.device, dtype=torch.float)
+        self.action_history_buf = torch.zeros(self.num_envs, self.cfg.domain_rand.action_buf_len, self.num_actions, device=self.device, dtype=torch.float)
+        self.contact_buf = torch.zeros(self.num_envs, self.cfg.env.contact_buf_len, 2, device=self.device, dtype=torch.float)
+        
+        # 初始化command相关
+        self.commands = torch.zeros(self.num_envs, self.cfg.commands.num_commands, dtype=torch.float, device=self.device, requires_grad=False)
+        self.commands_scale = torch.tensor([self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=self.device, requires_grad=False,)
+        self.feet_air_time = torch.zeros(self.num_envs, self.feet_indices.shape[0], dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+        self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
+        self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
+        self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
+        
+        # 初始化height measurements
+        if self.cfg.terrain.measure_heights:
+            self.height_points = self._init_height_points()
+        self.measured_heights = 0
+        
+        # 初始化default_dof_pos（从配置中读取默认关节角度）
+        self.default_dof_pos = torch.zeros(self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+        self.default_dof_pos_all = torch.zeros(self.num_envs, self.num_dof, dtype=torch.float, device=self.device, requires_grad=False)
+        
+        for i in range(self.num_dof):
+            name = self.dof_names[i]
+            if name in self.cfg.init_state.default_joint_angles:
+                angle = self.cfg.init_state.default_joint_angles[name]
+                self.default_dof_pos[i] = angle
+            else:
+                print(f"Warning: No default joint angle defined for {name}")
+                self.default_dof_pos[i] = 0.0
+        
+        self.default_dof_pos = self.default_dof_pos.unsqueeze(0)
+        self.default_dof_pos_all[:] = self.default_dof_pos[0]
+        
+        # 添加一些调试信息
+        print(f"G1 force_sensor_tensor shape: {self.force_sensor_tensor.shape}")
+        print(f"G1 contact_forces shape: {self.contact_forces.shape}")
+        print(f"G1 feet_indices: {self.feet_indices}")
+        print(f"G1 default_dof_pos: {self.default_dof_pos.squeeze().cpu().numpy()}")
 
     def update_feet_state(self):
         """更新足部状态"""
@@ -369,7 +488,12 @@ class G1Mimic(LeggedRobot):
         obs_demo = self.compute_obs_demo()
         
         motion_features = self.obs_history_buf[:, -self.cfg.env.prop_hist_len:].flatten(start_dim=1)
-        priv_explicit = torch.cat((0*self.base_lin_vel * self.obs_scales.lin_vel,), dim=-1)
+        # G1需要9维的priv_explicit，与原项目terrain-challenge保持一致
+        priv_explicit = torch.cat((
+            0*self.base_lin_vel * self.obs_scales.lin_vel,  # 3维：base velocity
+            torch.zeros(self.num_envs, 3, device=self.device),  # 3维：placeholder
+            torch.zeros(self.num_envs, 3, device=self.device)   # 3维：placeholder
+        ), dim=-1)
         
         # 安全地使用motor_strength
         try:
@@ -397,11 +521,11 @@ class G1Mimic(LeggedRobot):
             self.measured_heights = self._get_heights()
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.3 - self.measured_heights, -1, 1.)
             scan_obs = heights
-            self.obs_buf = torch.cat([motion_features, obs_buf, obs_demo, scan_obs, priv_explicit, priv_latent, self.obs_history_buf.view(self.num_envs, -1)], dim=-1)
+            self.obs_buf = torch.cat([obs_buf, scan_obs, priv_explicit, priv_latent, self.obs_history_buf.view(self.num_envs, -1)], dim=-1)
         else:
             n_scan = getattr(self.cfg, 'n_scan', 132)
             scan_obs = torch.zeros((self.num_envs, n_scan), device=self.device)
-            self.obs_buf = torch.cat([motion_features, obs_buf, obs_demo, scan_obs, priv_explicit, priv_latent, self.obs_history_buf.view(self.num_envs, -1)], dim=-1)
+            self.obs_buf = torch.cat([obs_buf, scan_obs, priv_explicit, priv_latent, self.obs_history_buf.view(self.num_envs, -1)], dim=-1)
         
         self.obs_history_buf = torch.where(
             (self.episode_length_buf <= 1)[:, None, None], 
@@ -790,8 +914,14 @@ class G1Mimic(LeggedRobot):
         # 动态识别G1的关键body ids
         self._build_g1_key_body_ids()
         
-        # G1暂时没有motion library，跳过
-        pass
+        # 加载G1的motion数据
+        if cfg.motion.motion_type == "single":
+            motion_file = os.path.join(ASE_DIR, f"ase/poselib/data/retarget_npy_g1/{cfg.motion.motion_name}.npy")
+        else:
+            assert cfg.motion.motion_type == "yaml"
+            motion_file = os.path.join(ASE_DIR, f"ase/poselib/data/configs/{cfg.motion.motion_name}")
+        
+        self._load_motion(motion_file, cfg.motion.no_keybody)
     
     def _build_g1_key_body_ids(self):
         """动态构建G1的关键body ids"""
@@ -816,47 +946,87 @@ class G1Mimic(LeggedRobot):
         self.dof_indices_sim = torch.arange(self.num_dof, device=self.device, dtype=torch.long)
         self.dof_indices_motion = torch.arange(self.num_dof, device=self.device, dtype=torch.long)
         
+        # G1的DOF body ids（每个DOF对应的body索引）
+        # G1有12个DOF：left_hip_pitch, left_hip_roll, left_hip_yaw, left_knee, left_ankle_pitch, left_ankle_roll,
+        #                right_hip_pitch, right_hip_roll, right_hip_yaw, right_knee, right_ankle_pitch, right_ankle_roll
+        self._dof_body_ids = [1, 2, 3, 4, 5, 6,  # left leg: hip, hip, hip, knee, ankle, ankle
+                              7, 8, 9, 10, 11, 12]  # right leg: hip, hip, hip, knee, ankle, ankle
+        
+        # G1的DOF offsets（每个body的DOF起始位置，需要比body_ids多1个元素）
+        self._dof_offsets = [0, 1, 2, 3, 4, 5,  # left leg DOF offsets
+                             6, 7, 8, 9, 10, 11,  # right leg DOF offsets
+                             12]  # 最后一个元素表示总DOF数
+        
         # 为了兼容H1的算法，需要定义_valid_dof_body_ids
         self._valid_dof_body_ids = torch.ones(self.num_dof, device=self.device, dtype=torch.bool)
         
         print(f"G1 DOF mapping: sim={self.dof_indices_sim.cpu().numpy()}, motion={self.dof_indices_motion.cpu().numpy()}")
         print(f"G1 num_dof: {self.num_dof}")
+        print(f"G1 DOF body ids: {self._dof_body_ids}")
+        print(f"G1 DOF offsets: {self._dof_offsets}")
     
-    def _debug_create_envs(self):
-        """调试_create_envs方法，检查力传感器创建"""
-        # 获取body名称
-        asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
-        asset_root = os.path.dirname(asset_path)
-        asset_file = os.path.basename(asset_path)
-        
-        # 重新加载asset以获取body信息
-        asset_options = gymapi.AssetOptions()
-        asset_options.default_dof_drive_mode = self.cfg.asset.default_dof_drive_mode
-        asset_options.collapse_fixed_joints = self.cfg.asset.collapse_fixed_joints
-        asset_options.replace_cylinder_with_capsule = self.cfg.asset.replace_cylinder_with_capsule
-        asset_options.flip_visual_attachments = self.cfg.asset.flip_visual_attachments
-        asset_options.fix_base_link = self.cfg.asset.fix_base_link
-        asset_options.density = self.cfg.asset.density
-        asset_options.angular_damping = self.cfg.asset.angular_damping
-        asset_options.linear_damping = self.cfg.asset.linear_damping
-        asset_options.max_angular_velocity = self.cfg.asset.max_angular_velocity
-        asset_options.max_linear_velocity = self.cfg.asset.max_linear_velocity
-        asset_options.armature = self.cfg.asset.armature
-        asset_options.thickness = self.cfg.asset.thickness
-        asset_options.disable_gravity = self.cfg.asset.disable_gravity
-        
-        robot_asset = self.gym.load_asset(self.sim, asset_root, asset_file, asset_options)
-        body_names = self.gym.get_asset_rigid_body_names(robot_asset)
-        
-        print(f"G1 Body names: {body_names}")
+    def _fix_force_sensors(self):
+        """修复G1的力传感器问题"""
+        # 使用基类已经存储的body_names
+        print(f"G1 Body names: {self.body_names}")
         
         # 检查脚部链接是否存在
+        foot_links = []
         for s in ["left_ankle_link", "right_ankle_link"]:
-            try:
-                feet_idx = self.gym.find_asset_rigid_body_index(robot_asset, s)
-                print(f"Found {s} at index {feet_idx}")
-            except Exception as e:
-                print(f"Error finding {s}: {e}")
+            if s in self.body_names:
+                foot_links.append(s)
+                print(f"Found {s} in body names")
+            else:
+                # 使用替代链接
+                if "left" in s:
+                    alt_link = "left_ankle_roll_link"
+                else:
+                    alt_link = "right_ankle_roll_link"
+                
+                if alt_link in self.body_names:
+                    foot_links.append(alt_link)
+                    print(f"Using alternative {alt_link} for {s}")
+                else:
+                    print(f"Warning: Neither {s} nor {alt_link} found in body names!")
+        
+        # 重新加载asset并创建力传感器
+        if foot_links:
+            asset_path = self.cfg.asset.file.format(LEGGED_GYM_ROOT_DIR=LEGGED_GYM_ROOT_DIR)
+            asset_root = os.path.dirname(asset_path)
+            asset_file = os.path.basename(asset_path)
+            
+            # 重新加载asset以创建力传感器
+            asset_options = gymapi.AssetOptions()
+            asset_options.default_dof_drive_mode = self.cfg.asset.default_dof_drive_mode
+            asset_options.collapse_fixed_joints = self.cfg.asset.collapse_fixed_joints
+            asset_options.replace_cylinder_with_capsule = self.cfg.asset.replace_cylinder_with_capsule
+            asset_options.flip_visual_attachments = self.cfg.asset.flip_visual_attachments
+            asset_options.fix_base_link = self.cfg.asset.fix_base_link
+            asset_options.density = self.cfg.asset.density
+            asset_options.angular_damping = self.cfg.asset.angular_damping
+            asset_options.linear_damping = self.cfg.asset.linear_damping
+            asset_options.max_angular_velocity = self.cfg.asset.max_angular_velocity
+            asset_options.max_linear_velocity = self.cfg.asset.max_linear_velocity
+            asset_options.armature = self.cfg.asset.armature
+            asset_options.thickness = self.cfg.asset.thickness
+            asset_options.disable_gravity = self.cfg.asset.disable_gravity
+            
+            robot_asset = self.gym.load_asset(self.sim, asset_root, asset_file, asset_options)
+            
+            # 创建力传感器
+            for foot_link in foot_links:
+                try:
+                    feet_idx = self.gym.find_asset_rigid_body_index(robot_asset, foot_link)
+                    if feet_idx >= 0:
+                        sensor_pose = gymapi.Transform(gymapi.Vec3(0.0, 0.0, 0.0))
+                        self.gym.create_asset_force_sensor(robot_asset, feet_idx, sensor_pose)
+                        print(f"Created force sensor for {foot_link} at index {feet_idx}")
+                    else:
+                        print(f"Warning: Could not find {foot_link} in asset")
+                except Exception as e:
+                    print(f"Error creating force sensor for {foot_link}: {e}")
+        else:
+            print("No suitable foot links found for force sensors")
     
     def init_motion_buffers(self, cfg):
         """初始化motion buffers（G1版本）"""

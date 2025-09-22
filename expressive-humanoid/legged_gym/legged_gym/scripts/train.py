@@ -61,6 +61,14 @@ def train(args):
     wandb.save(LEGGED_GYM_ENVS_DIR + "/base/legged_robot.py", policy="now")
     wandb.save(LEGGED_GYM_ENVS_DIR + "/h1/h1_mimic_config.py", policy="now")
     wandb.save(LEGGED_GYM_ENVS_DIR + "/h1/h1_mimic.py", policy="now")
+    
+    # 如果是G1任务，也保存G1相关文件
+    if "g1" in args.task:
+        wandb.save(LEGGED_GYM_ENVS_DIR + "/g1/g1_mimic_config.py", policy="now")
+        wandb.save(LEGGED_GYM_ENVS_DIR + "/g1/g1_mimic.py", policy="now")
+        if "amp" in args.task:
+            wandb.save(LEGGED_GYM_ENVS_DIR + "/g1/g1_mimic_amp_config.py", policy="now")
+            wandb.save(LEGGED_GYM_ENVS_DIR + "/g1/g1_mimic_amp.py", policy="now")
 
     env, env_cfg = task_registry.make_env(name=args.task, args=args)
     ppo_runner, train_cfg = task_registry.make_alg_runner(log_root = log_pth, env=env, name=args.task, args=args)

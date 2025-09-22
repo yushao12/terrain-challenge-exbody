@@ -61,16 +61,19 @@ class G1MimicCfg( LeggedRobotCfg ):
         n_demo = 9 + 3 + 3 + 3 +6*3  #observe height
         interval_demo_steps = 0.1
 
-        n_scan = 132  # 启用132维scan观测
-        n_priv = 3
-        n_priv_latent = 4 + 1 + 12*2  # G1有12个DOF
-        n_proprio = 3 + 2 + 3 + 3 + 2 + 12*3 + 2 # 角速度3 + IMU2 + goal3 + 命令3 + 环境类别2 + DOF相关36 + 接触2 = 51
+        n_scan = 132  # 与原项目terrain-challenge保持一致
+        n_priv = 3 + 3 + 3  # = 9 base velocity 3个，与原项目terrain-challenge保持一致
+        n_priv_latent = 4 + 1 + 12 + 12  # mass, fraction, motor strength1 and 2，与原项目terrain-challenge保持一致
+        n_proprio = 51  # 与原项目terrain-challenge保持一致
         history_len = 10
 
         prop_hist_len = 4
+        # 注意：n_feature不用于最终观测维度计算，只是为了兼容G1Mimic环境
         n_feature = prop_hist_len * n_proprio
 
-        num_observations = n_feature + n_proprio + n_demo + n_scan + history_len*n_proprio + n_priv_latent + n_priv
+        # 与原项目terrain-challenge完全一致的观测维度计算
+        # 注意：这里不包含n_demo和n_feature，因为原项目terrain-challenge没有这些
+        num_observations = n_proprio + n_scan + history_len*n_proprio + n_priv_latent + n_priv
 
         episode_length_s = 50 # episode length in seconds
         
@@ -278,11 +281,6 @@ class G1MimicCfg( LeggedRobotCfg ):
         foot_size_tolerance = 0.1  # 脚部大小容忍度（米）
 
 class G1MimicCfgPPO( LeggedRobotCfgPPO ):
-    class runner( LeggedRobotCfgPPO.runner ):
-        runner_class_name = "OnPolicyRunnerMimic"
-        policy_class_name = 'ActorCriticMimic'
-        algorithm_class_name = 'PPOMimic'
-    
     class policy( LeggedRobotCfgPPO.policy ):
         continue_from_last_std = False
         text_feat_input_dim = G1MimicCfg.env.n_feature
@@ -292,7 +290,16 @@ class G1MimicCfgPPO( LeggedRobotCfgPPO ):
         # critic_hidden_dims = [1024, 512]
     
     class algorithm( LeggedRobotCfgPPO.algorithm ):
-        entropy_coef = 0.005
+        entropy_coef = 0.01
+    
+    class runner( LeggedRobotCfgPPO.runner ):
+        runner_class_name = "OnPolicyRunnerMimic"
+        policy_class_name = 'ActorCriticMimic'
+        algorithm_class_name = 'PPOMimic'
+        run_name = ''
+        experiment_name = 'g1_mimic'
+        max_iterations = 50001 # number of policy updates
+        save_interval = 500
 
     class estimator:
         train_with_estimated_states = False

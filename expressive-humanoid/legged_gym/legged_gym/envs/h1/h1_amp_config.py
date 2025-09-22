@@ -30,4 +30,5 @@ class H1AMPCfgPPO(LeggedRobotCfgPPO):
         # 学习率降低到当前的1/10
         amp_learning_rate = 1.e-5  # 从1.e-4调整为1.e-5
         amp_reward_coef = 4.0
+       # amp_reward_coef = 0.0
         amp_grad_pen = 5 

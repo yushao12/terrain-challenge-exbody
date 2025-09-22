@@ -43,7 +43,7 @@ class combine_config:
               # ("multiplication", 0, 0.05),
               # ("addition", 0, 0.05),
               # ("single", 5, 0.1),
-               ("single", 4, 1),
+               ("single", 3, 1),
               # ("multiplication", 0, 0.05),       
               # ("addition", 0, 0.05),
         ]
