@@ -38,9 +38,10 @@ class G1MimicAMP(G1Mimic):
     
     def _compute_amp_observations(self, env_ids=None):
         """计算AMP观测，使用G1的下半身关键点"""
-        # 使用G1的下半身关键点：左髋、左膝、左踝、右髋、右膝、右踝
-        # 注意：G1的body索引可能与H1不同，需要根据实际情况调整
-        lower_body_key_ids = torch.tensor([1, 4, 5, 6, 9, 10], device=self.device)
+        # 使用G1的下半身关键点：pelvis, 左髋、左膝、左踝、右髋、右膝、右踝
+        # 根据G1 URDF分析结果：pelvis(0), left_hip_pitch_link(2), left_knee_link(5), left_ankle_pitch_link(6),
+        # right_hip_pitch_link(8), right_knee_link(11), right_ankle_pitch_link(12)
+        lower_body_key_ids = torch.tensor([0, 2, 5, 6, 8, 11, 12], device=self.device)
         
         # 确保索引不超出范围
         max_body_idx = self.rigid_body_states.shape[1] - 1
@@ -73,6 +74,10 @@ class G1MimicAMP(G1Mimic):
     ######### demonstrations #########
     def fetch_amp_obs_demo(self, num_samples):
         """从G1的motion数据中获取demo观测"""
+        # 确保motion库可用且有采样能力
+        if not hasattr(self, '_motion_lib') or not hasattr(self._motion_lib, 'sample_motions'):
+            raise RuntimeError("Motion library not available or cannot sample motions. Check motion_type and skip_load settings.")
+
         if (self._amp_obs_demo_buf is None):
             self._build_amp_obs_demo_buf(num_samples)
         else:
@@ -93,6 +98,7 @@ class G1MimicAMP(G1Mimic):
         return amp_obs_demo_flat
     
     def build_amp_obs_demo(self, motion_ids, motion_times0):
+        """构建AMP demo观测"""
         dt = self.dt
 
         motion_ids = torch.tile(motion_ids.unsqueeze(-1), [1, self._num_amp_obs_steps])
@@ -108,7 +114,7 @@ class G1MimicAMP(G1Mimic):
         dof_pos, dof_vel = self.reindex_dof_pos_vel(dof_pos, dof_vel)
         
         # 只使用下半身关键点数据
-        lower_body_key_ids = torch.tensor([1, 4, 5, 6, 9, 10], device=self.device)
+        lower_body_key_ids = torch.tensor([0, 2, 5, 6, 8, 11, 12], device=self.device)
         if local_key_body_pos.shape[1] > max(lower_body_key_ids):
             local_key_body_pos_lower = local_key_body_pos[:, lower_body_key_ids, :]
         else:

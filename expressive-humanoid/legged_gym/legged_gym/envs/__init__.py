@@ -56,6 +56,7 @@ from .g1.g1_mimic_config import G1MimicCfg, G1MimicCfgPPO
 from .g1.g1_mimic_amp_config import G1MimicAMPCfg, G1MimicAMPCfgPPO
 from .g1.g1_mimic import G1Mimic
 from .g1.g1_mimic_amp import G1MimicAMP
+from .g1.g1_mimic_view_motion import G1MimicViewMotion
 
 import os
 import ipdb
@@ -79,7 +80,7 @@ task_registry.register( "h1_mimic_distill", H1MimicDistill, H1MimicCfg(), H1Mimi
 task_registry.register( "g1", G1Robot, G1Cfg(), G1CfgPPO() )
 task_registry.register( "g1_mimic", G1Mimic, G1MimicCfg(), G1MimicCfgPPO() )
 task_registry.register( "g1_mimic_amp", G1MimicAMP, G1MimicAMPCfg(), G1MimicAMPCfgPPO() )
-
+task_registry.register( "g1_view", G1MimicViewMotion, G1MimicAMPCfg(), G1MimicAMPCfgPPO() )
 
 
 

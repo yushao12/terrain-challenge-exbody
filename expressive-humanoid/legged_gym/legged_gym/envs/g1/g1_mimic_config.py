@@ -94,19 +94,19 @@ class G1MimicCfg( LeggedRobotCfg ):
 
     class init_state( LeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.80]  # x,y,z [m] - 降低初始高度以适应G1
-        default_joint_angles = { # = target angles [rad] when action = 0.0
-           'left_hip_yaw_joint' : 0. ,
-           'left_hip_roll_joint' : 0,
-           'left_hip_pitch_joint' : -0.2,  # 增大hip pitch使姿态更稳定
-           'left_knee_joint' : 0.4,        # 增大knee弯曲
-           'left_ankle_pitch_joint' : -0.2,
-           'left_ankle_roll_joint' : 0,
-           'right_hip_yaw_joint' : 0.,
-           'right_hip_roll_joint' : 0,
-           'right_hip_pitch_joint' : -0.2,  # 对称设置
-           'right_knee_joint' : 0.4,        # 对称设置
-           'right_ankle_pitch_joint': -0.2,
-           'right_ankle_roll_joint' : 0,
+        default_joint_angles = { # = target angles [rad] when action = 0.0 - 按照URDF顺序
+           'left_hip_pitch_joint' : -0.1,  # 索引0: URDF顺序
+           'left_hip_roll_joint' : 0,      # 索引1: URDF顺序
+           'left_hip_yaw_joint' : 0. ,     # 索引2: URDF顺序
+           'left_knee_joint' : 0.3,        # 索引3: URDF顺序
+           'left_ankle_pitch_joint' : -0.2, # 索引4: URDF顺序
+           'left_ankle_roll_joint' : 0,    # 索引5: URDF顺序
+           'right_hip_pitch_joint' : -0.1, # 索引6: URDF顺序
+           'right_hip_roll_joint' : 0,     # 索引7: URDF顺序
+           'right_hip_yaw_joint' : 0.,     # 索引8: URDF顺序
+           'right_knee_joint' : 0.3,       # 索引9: URDF顺序
+           'right_ankle_pitch_joint': -0.2, # 索引10: URDF顺序
+           'right_ankle_roll_joint' : 0,   # 索引11: URDF顺序
         }
 
     class control( LeggedRobotCfg.control ):

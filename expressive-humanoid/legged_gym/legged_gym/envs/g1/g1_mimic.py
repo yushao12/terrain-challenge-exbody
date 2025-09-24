@@ -67,8 +67,7 @@ class G1Mimic(LeggedRobot):
         
         # 先初始化基本motion参数（不依赖simulation）
         self._init_basic_motion_params(cfg)
-        if cfg.motion.num_envs_as_motions:
-            self.cfg.env.num_envs = 1  # G1暂时没有motion数据，保持原配置
+        # 不强制修改并行环境数，保持来自配置/命令行的 num_envs
         
         # 确保num_actions正确设置为G1的12个DOF
         self.cfg.env.num_actions = self.cfg.env.num_policy_actions
@@ -410,9 +409,11 @@ class G1Mimic(LeggedRobot):
         super().post_physics_step()
 
     def reindex(self, vec):
-        """G1的reindex方法，与H1保持一致但适配12个DOF"""
-        # G1有12个DOF，直接返回原向量
-        return vec
+        """G1的reindex方法，与原项目Humanoid-Terrain-Bench保持一致"""
+        # 原项目的reindex逻辑：[3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8]
+        # 将 [hip_yaw, hip_roll, hip_pitch, knee, ankle_pitch, ankle_roll, right_hip_yaw, right_hip_roll, right_hip_pitch, right_knee, right_ankle_pitch, right_ankle_roll]
+        # 重排为 [knee, ankle_pitch, ankle_roll, hip_yaw, hip_roll, hip_pitch, right_knee, right_ankle_pitch, right_ankle_roll, right_hip_yaw, right_hip_roll, right_hip_pitch]
+        return vec[:, [3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8]]
     
     def reindex_feet(self, vec):
         """G1的足部reindex方法"""
@@ -468,10 +469,10 @@ class G1Mimic(LeggedRobot):
             self.commands[:, 0:1],    # [1] 线速度命令
             (self.env_class != 17).float()[:, None],  # [1] 环境类别标志1
             (self.env_class == 17).float()[:, None],  # [1] 环境类别标志2
-            self.reindex((self.dof_pos - self.default_dof_pos_all) * self.obs_scales.dof_pos),  # [12] DOF位置
-            self.reindex(self.dof_vel * self.obs_scales.dof_vel),                              # [12] DOF速度
-            self.reindex(self.action_history_buf[:, -1]),                                     # [12] 上一动作
-            self.reindex_feet(self.contact_filt.float()*0-0.5),                               # [2] 接触状态
+            (self.dof_pos - self.default_dof_pos_all) * self.obs_scales.dof_pos,  # [12] DOF位置 - 不使用reindex
+            self.dof_vel * self.obs_scales.dof_vel,                              # [12] DOF速度 - 不使用reindex
+            self.action_history_buf[:, -1],                                     # [12] 上一动作 - 不使用reindex
+            self.contact_filt.float()*0-0.5,                               # [2] 接触状态 - 不使用reindex_feet
         ), dim=-1)
     
     def compute_obs_demo(self):
@@ -554,8 +555,25 @@ class G1Mimic(LeggedRobot):
         pass
     
     def check_termination(self):
-        """检查终止条件，与H1保持一致"""
-        self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
+        """检查终止条件，调整为更宽松的条件"""
+        # 原来的严格接触力终止条件（注释掉）
+        # self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
+        
+        # 放宽接触力终止条件：从1N提高到5N
+        self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 5., dim=1)
+        
+        # 添加高度终止条件（基类中有但被注释掉了）
+        # 原来的严格高度终止条件（注释掉）
+        # height_cutoff = self.root_states[:, 2] < 0.5
+        # 放宽高度终止条件：从0.5米降低到0.2米
+        height_cutoff = self.root_states[:, 2] < 0
+        self.reset_buf |= height_cutoff
+        
+        # 添加姿态终止条件：roll和pitch角度限制（基类中有但被注释掉了）
+        roll_cutoff = torch.abs(self.roll) > 1.5  # 从1.0放宽到1.5
+        pitch_cutoff = torch.abs(self.pitch) > 1.5  # 从1.0放宽到1.5
+        self.reset_buf |= roll_cutoff
+        self.reset_buf |= pitch_cutoff
         
         # 早停机制
         if hasattr(self, 'cur_goals') and self.cur_goals is not None:
@@ -772,16 +790,17 @@ class G1Mimic(LeggedRobot):
     
     ######### 缺失的关键方法 #########
     def step(self, actions):
-        """重写step方法，与H1保持一致"""
-        actions = self.reindex(actions)
+        """重写step方法，与原项目保持一致 - 不使用reindex"""
         actions.to(self.device)
         
         # 记录action历史
         if hasattr(self, 'action_history_buf'):
             self.action_history_buf = torch.cat([self.action_history_buf[:, 1:].clone(), actions[:, None, :].clone()], dim=1)
         
-        # G1的ankle限制（适配12DOF）
-        # G1的ankle joint indices: [4, 5, 10, 11] (ankle_pitch, ankle_roll for both legs)
+        # G1的ankle限制（适配12DOF）- 按照URDF原始顺序
+        # URDF顺序：left_hip_pitch, left_hip_roll, left_hip_yaw, left_knee, left_ankle_pitch, left_ankle_roll, 
+        #           right_hip_pitch, right_hip_roll, right_hip_yaw, right_knee, right_ankle_pitch, right_ankle_roll
+        # ankle关节的索引：[4, 5, 10, 11] (left_ankle_pitch, left_ankle_roll, right_ankle_pitch, right_ankle_roll)
         ankle_indices = [4, 5, 10, 11]
         for idx in ankle_indices:
             if idx < actions.shape[1]:
@@ -898,6 +917,17 @@ class G1Mimic(LeggedRobot):
         self.gym.set_dof_state_tensor_indexed(self.sim,
                                               gymtorch.unwrap_tensor(self.dof_state),
                                               gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
+    def _set_env_state(self, env_ids, root_pos, root_rot, dof_pos, root_vel, root_ang_vel, dof_vel):
+        """设置指定环境的根和关节状态，供view/AMP同步motion使用"""
+        self.root_states[env_ids, 0:3] = root_pos
+        self.root_states[env_ids, 3:7] = root_rot
+        self.root_states[env_ids, 7:10] = root_vel
+        self.root_states[env_ids, 10:13] = root_ang_vel
+
+        self.dof_pos[env_ids] = dof_pos
+        self.dof_vel[env_ids] = dof_vel
+        return
     
     def _init_basic_motion_params(self, cfg):
         """初始化基本motion参数（不依赖simulation）"""
@@ -911,6 +941,26 @@ class G1Mimic(LeggedRobot):
     
     def init_motions(self, cfg):
         """初始化motion相关参数（G1版本）"""
+        # 若配置要求跳过加载motion，则直接初始化占位状态并返回
+        skip_load = getattr(cfg.motion, 'skip_load', False) or getattr(cfg.motion, 'motion_type', None) == 'none'
+        if skip_load:
+            # 仍然初始化关键body ids，便于后续使用
+            self._build_g1_key_body_ids()
+            # 初始化空的motion占位，避免后续访问
+            class _EmptyMotionLib:
+                def __init__(self, device):
+                    self._device = device
+                def num_motions(self):
+                    return 0
+                def get_motion_files(self, ids):
+                    return []
+                def get_motion_description(self, ids):
+                    return ""
+            self._motion_lib = _EmptyMotionLib(self.device)
+            self._motion_ids = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+            self._motion_times = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+            return
+
         # 动态识别G1的关键body ids
         self._build_g1_key_body_ids()
         
@@ -922,6 +972,15 @@ class G1Mimic(LeggedRobot):
             motion_file = os.path.join(ASE_DIR, f"ase/poselib/data/configs/{cfg.motion.motion_name}")
         
         self._load_motion(motion_file, cfg.motion.no_keybody)
+        
+        # 初始化与motion相关的索引与时间缓冲，供视图/AMP等上层模块使用
+        # 注：此前仅在 skip_load 分支中进行了占位初始化，这里在正常加载后也进行初始化
+        num_motions = self._motion_lib.num_motions() if hasattr(self, "_motion_lib") else 0
+        self._motion_ids = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self._motion_times = torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+        # 若配置启用按环境映射到不同motion，则为每个env分配一个motion id（取模避免越界）
+        if getattr(cfg.motion, 'num_envs_as_motions', False) and num_motions > 0:
+            self._motion_ids[:] = torch.arange(self.num_envs, device=self.device) % num_motions
     
     def _build_g1_key_body_ids(self):
         """动态构建G1的关键body ids"""
@@ -929,8 +988,8 @@ class G1Mimic(LeggedRobot):
         # 注意：这个方法在_create_envs之前调用，所以暂时使用默认值
         # 实际的body信息会在_create_envs中设置
         
-        # 使用默认的关键body索引
-        self._key_body_ids = torch.tensor([0, 5, 10], device=self.device)  # pelvis, left_ankle, right_ankle
+        # 使用默认的关键body索引（基于URDF分析结果）
+        self._key_body_ids = torch.tensor([0, 2, 5, 6, 8, 11, 12], device=self.device)  # pelvis, left_hip_pitch, left_knee, left_ankle_pitch, right_hip_pitch, right_knee, right_ankle_pitch
         self._key_body_ids_sim = self._key_body_ids.clone()
         self._key_body_ids_sim_subset = torch.arange(len(self._key_body_ids), device=self.device)
         self._num_key_bodies = len(self._key_body_ids_sim_subset)
@@ -946,11 +1005,11 @@ class G1Mimic(LeggedRobot):
         self.dof_indices_sim = torch.arange(self.num_dof, device=self.device, dtype=torch.long)
         self.dof_indices_motion = torch.arange(self.num_dof, device=self.device, dtype=torch.long)
         
-        # G1的DOF body ids（每个DOF对应的body索引）
+        # G1的DOF body ids（每个DOF对应的body索引）- 按照URDF正确顺序
         # G1有12个DOF：left_hip_pitch, left_hip_roll, left_hip_yaw, left_knee, left_ankle_pitch, left_ankle_roll,
         #                right_hip_pitch, right_hip_roll, right_hip_yaw, right_knee, right_ankle_pitch, right_ankle_roll
-        self._dof_body_ids = [1, 2, 3, 4, 5, 6,  # left leg: hip, hip, hip, knee, ankle, ankle
-                              7, 8, 9, 10, 11, 12]  # right leg: hip, hip, hip, knee, ankle, ankle
+        self._dof_body_ids = [1, 2, 3, 4, 5, 6,  # left leg: hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
+                              7, 8, 9, 10, 11, 12]  # right leg: hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
         
         # G1的DOF offsets（每个body的DOF起始位置，需要比body_ids多1个元素）
         self._dof_offsets = [0, 1, 2, 3, 4, 5,  # left leg DOF offsets

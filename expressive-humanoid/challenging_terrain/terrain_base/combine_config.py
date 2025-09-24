@@ -31,21 +31,21 @@ class combine_config:
                 
                 # 其他地形配置（注释掉，专注于parkour训练）
                 #("single", 3, 1),
-                #("single", 1, 0.1),
-               # ("single", 2, 0.1),
-                #("single", 3, 0.1),
-              #  ("single", 4, 0.1),
-               # ("single", 6, 0.1),
-               # ("single", 7, 0.1),
+                ("single", 1, 0.1),
+                ("single", 2, 0.1),
+                ("single", 3, 0.1),
+                ("single", 4, 0.1),
+                ("single", 6, 0.1),
+                ("single", 7, 0.1),
                # ("single", 7, 1),  # wave地形
               # ("single", 7, 0.3),   # slope地形
               # ("multiplication", 2, 1)
               # ("multiplication", 0, 0.05),
-              # ("addition", 0, 0.05),
-              # ("single", 5, 0.1),
-               ("single", 3, 1),
-              # ("multiplication", 0, 0.05),       
-              # ("addition", 0, 0.05),
+               ("addition", 0, 0.05),
+               ("single", 5, 0.1),
+              # ("single", 3, 1),
+              # ("multiplication", 1, 0.05),       
+              # ("multiplication", 2, 0.05),       
         ]
 
 class generator:

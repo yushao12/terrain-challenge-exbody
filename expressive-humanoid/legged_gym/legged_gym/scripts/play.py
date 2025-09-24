@@ -115,6 +115,22 @@ def play(args):
     env_cfg.domain_rand.randomize_base_mass = False
     env_cfg.domain_rand.randomize_base_com = False
 
+    # For G1 play runs, do not require key body files (run without motion key bodies)
+    try:
+        if isinstance(args.task, str) and args.task.startswith("g1") and hasattr(env_cfg, "motion"):
+            # do not require key bodies and skip motion loading entirely for play
+            if args.task != "g1_view":
+                env_cfg.motion.no_keybody = True
+                env_cfg.motion.skip_load = True
+                env_cfg.motion.motion_type = "none"
+            # also disable AMP demo usage in the runner without causing div-by-zero
+            if hasattr(train_cfg, 'amp'):
+                # zero buffer disables usage; fetch batch size set to 1 to avoid zero division
+                train_cfg.amp.amp_demo_buffer_size = 0
+                train_cfg.amp.amp_demo_fetch_batch_size = 1
+    except Exception:
+        pass
+
     depth_latent_buffer = []
     # prepare environment
     env: LeggedRobot

@@ -52,14 +52,14 @@ class G1MimicAMPCfg( G1MimicCfg ):
 
     class amp():
         num_obs_steps = 10
-        # 简化观测：dof_pos(12) + local_root_vel(3) + local_root_ang_vel(3) + roll(1) + pitch(1) + root_height(1) + lower_body_key_pos(6*3)
-        # G1有12个DOF，所以是12 + 3 + 3 + 1 + 1 + 1 + 18 = 39
-        num_obs_per_step = 12 + 3 + 3 + 1 + 1 + 1 + 6*3
+        # 简化观测：dof_pos(12) + local_root_vel(3) + local_root_ang_vel(3) + roll(1) + pitch(1) + root_height(1) + lower_body_key_pos(7*3)
+        # G1有12个DOF和7个关键关节，所以是12 + 3 + 3 + 1 + 1 + 1 + 21 = 42
+        num_obs_per_step = 12 + 3 + 3 + 1 + 1 + 1 + 7*3
 
 class G1MimicAMPCfgPPO( G1MimicCfgPPO ):
     class runner( G1MimicCfgPPO.runner ):
-        runner_class_name = "OnPolicyRunnerMimicAMP"
-        policy_class_name = 'ActorCriticMimic'
+        runner_class_name = "OnPolicyRunner"
+        policy_class_name = 'ActorCriticRMA'
         algorithm_class_name = 'PPO'
     
     class amp():
