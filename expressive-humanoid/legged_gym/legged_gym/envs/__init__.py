@@ -57,6 +57,11 @@ from .g1.g1_mimic_amp_config import G1MimicAMPCfg, G1MimicAMPCfgPPO
 from .g1.g1_mimic import G1Mimic
 from .g1.g1_mimic_amp import G1MimicAMP
 from .g1.g1_mimic_view_motion import G1MimicViewMotion
+from .h1_2.h1_2_mimic_config import H1_2MimicCfg, H1_2MimicCfgPPO
+from .h1_2.h1_2_mimic_amp_config import H1_2MimicAMPCfg, H1_2MimicAMPCfgPPO
+from .h1_2.h1_2_mimic import H1_2Mimic
+from .h1_2.h1_2_mimic_amp import H1_2MimicAMP
+from .h1_2.h1_2_mimic_view_motion import H1_2MimicViewMotion
 
 import os
 import ipdb
@@ -81,6 +86,9 @@ task_registry.register( "g1", G1Robot, G1Cfg(), G1CfgPPO() )
 task_registry.register( "g1_mimic", G1Mimic, G1MimicCfg(), G1MimicCfgPPO() )
 task_registry.register( "g1_mimic_amp", G1MimicAMP, G1MimicAMPCfg(), G1MimicAMPCfgPPO() )
 task_registry.register( "g1_view", G1MimicViewMotion, G1MimicAMPCfg(), G1MimicAMPCfgPPO() )
+task_registry.register( "h1_2_mimic", H1_2Mimic, H1_2MimicCfg(), H1_2MimicCfgPPO() )
+task_registry.register( "h1_2_mimic_amp", H1_2MimicAMP, H1_2MimicAMPCfg(), H1_2MimicAMPCfgPPO() )
+task_registry.register( "h1_2_view", H1_2MimicViewMotion, H1_2MimicAMPCfg(), H1_2MimicAMPCfgPPO() )
 
 
 

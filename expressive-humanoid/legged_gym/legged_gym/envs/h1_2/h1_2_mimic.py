@@ -30,7 +30,9 @@ import cv2
 from motion_lib import MotionLib
 import torch_utils
 
-class G1Mimic(LeggedRobot):
+from .h1_2_mimic_config import H1_2MimicCfg, H1_2MimicCfgPPO
+
+class H1_2Mimic(LeggedRobot):
     def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless):
         self.cfg = cfg
         self.sim_params = sim_params
@@ -804,9 +806,9 @@ class G1Mimic(LeggedRobot):
         if hasattr(self, 'action_history_buf'):
             self.action_history_buf = torch.cat([self.action_history_buf[:, 1:].clone(), actions[:, None, :].clone()], dim=1)
         
-        # G1的ankle限制（适配12DOF）- 按照URDF原始顺序
-        # URDF顺序：left_hip_pitch, left_hip_roll, left_hip_yaw, left_knee, left_ankle_pitch, left_ankle_roll, 
-        #           right_hip_pitch, right_hip_roll, right_hip_yaw, right_knee, right_ankle_pitch, right_ankle_roll
+        # H1_2的ankle限制（适配12DOF）- 按照URDF原始顺序
+        # URDF顺序：left_hip_yaw, left_hip_pitch, left_hip_roll, left_knee, left_ankle_pitch, left_ankle_roll, 
+        #           right_hip_yaw, right_hip_pitch, right_hip_roll, right_knee, right_ankle_pitch, right_ankle_roll
         # ankle关节的索引：[4, 5, 10, 11] (left_ankle_pitch, left_ankle_roll, right_ankle_pitch, right_ankle_roll)
         ankle_indices = [4, 5, 10, 11]
         for idx in ankle_indices:
@@ -1040,7 +1042,7 @@ class G1Mimic(LeggedRobot):
         # 3. 关键点选择（与H1一致，选择髋关节、膝关节和踝关节）
         # H1: [3, 6, 9, 12] - 对应左右腿的髋关节和膝关节
         # G1: 我们选择相应的关节
-        self._key_body_ids = torch.tensor([0, 3, 4, 6, 9, 10], device=self.device)  # [left_hip_pitch, left_knee, left_ankle_pitch, right_hip_pitch, right_knee, right_ankle_pitch]
+        self._key_body_ids = torch.tensor([2, 4, 8, 10], device=self.device)  # [left_hip_pitch, left_knee, right_hip_pitch, right_knee]
         self._key_body_ids_sim = self._key_body_ids.clone()
         self._key_body_ids_sim_subset = torch.arange(len(self._key_body_ids), device=self.device)
         self._num_key_bodies = len(self._key_body_ids_sim_subset)
@@ -1057,15 +1059,15 @@ class G1Mimic(LeggedRobot):
         # 注意：此处尚未加载asset，self.num_dof 可能尚未可用，使用映射列表长度更安全
         self._valid_dof_body_ids = torch.ones(len(self._dof_body_ids), device=self.device, dtype=torch.bool)
         
-        print(f"G1 Key body indices: {self._key_body_ids.cpu().numpy()}")
-        print(f"G1 DOF body ids: {self._dof_body_ids}")
-        print(f"G1 DOF offsets: {self._dof_offsets}")
+        print(f"H1_2 Key body indices: {self._key_body_ids.cpu().numpy()}")
+        print(f"H1_2 DOF body ids: {self._dof_body_ids}")
+        print(f"H1_2 DOF offsets: {self._dof_offsets}")
         print(f"G1 Joint mapping: sim -> motion")
     
     def _build_g1_dof_mapping(self):
         """动态构建G1的DOF索引映射"""
         # 使用已经在_create_envs中加载的DOF信息
-        print(f"G1 DOF names: {self.dof_names}")
+        print(f"H1_2 DOF names: {self.dof_names}")
     
     # 删除错误的映射函数 - Motion数据和仿真数据的关节顺序已经一致，不需要重新映射
         
@@ -1087,10 +1089,10 @@ class G1Mimic(LeggedRobot):
         # 为了兼容H1的算法，需要定义_valid_dof_body_ids
         self._valid_dof_body_ids = torch.ones(self.num_dof, device=self.device, dtype=torch.bool)
         
-        print(f"G1 DOF mapping: sim={self.dof_indices_sim.cpu().numpy()}, motion={self.dof_indices_motion.cpu().numpy()}")
-        print(f"G1 num_dof: {self.num_dof}")
-        print(f"G1 DOF body ids: {self._dof_body_ids}")
-        print(f"G1 DOF offsets: {self._dof_offsets}")
+        print(f"H1_2 DOF mapping: sim={self.dof_indices_sim.cpu().numpy()}, motion={self.dof_indices_motion.cpu().numpy()}")
+        print(f"H1_2 num_dof: {self.num_dof}")
+        print(f"H1_2 DOF body ids: {self._dof_body_ids}")
+        print(f"H1_2 DOF offsets: {self._dof_offsets}")
     
     def _fix_force_sensors(self):
         """修复G1的力传感器问题"""

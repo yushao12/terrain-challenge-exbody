@@ -978,7 +978,11 @@ class LeggedRobot(BaseTask):
         self.num_bodies = len(body_names)
         self.num_dofs = len(self.dof_names)
         feet_names = [s for s in body_names if self.cfg.asset.foot_name in s]
-        self.torso_idx = self.gym.find_asset_rigid_body_index(robot_asset, self.cfg.asset.torso_name)
+        # 如果没有torso_name配置，使用第一个body（索引0）进行域随机化，与原项目保持一致
+        if hasattr(self.cfg.asset, 'torso_name') and self.cfg.asset.torso_name:
+            self.torso_idx = self.gym.find_asset_rigid_body_index(robot_asset, self.cfg.asset.torso_name)
+        else:
+            self.torso_idx = 0  # 使用第一个body，通常是pelvis或合并后的整体
 
         for s in ["left_ankle_link", "right_ankle_link"]:
             feet_idx = self.gym.find_asset_rigid_body_index(robot_asset, s)

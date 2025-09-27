@@ -2,13 +2,12 @@ from isaacgym.torch_utils import *
 import torch
 from legged_gym.utils.math import *
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg
-from legged_gym.envs.g1.g1_mimic import G1Mimic, global_to_local, local_to_global
+from legged_gym.envs.h1_2.h1_2_mimic import H1_2Mimic, global_to_local, local_to_global
 from legged_gym.envs.base.legged_robot import euler_from_quaternion
-from isaacgym.torch_utils import quat_rotate, quat_rotate_inverse
 
 import torch_utils
 
-class G1MimicAMP(G1Mimic):
+class H1_2MimicAMP(H1_2Mimic):
     def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless):
         
         self._num_amp_obs_per_step = cfg.amp.num_obs_per_step
@@ -17,9 +16,9 @@ class G1MimicAMP(G1Mimic):
         self._curr_amp_obs_buf = self._amp_obs_buf[:, 0]
         self._hist_amp_obs_buf = self._amp_obs_buf[:, 1:]
         self._amp_obs_demo_buf = None
-        
+
         super().__init__(cfg, sim_params, physics_engine, sim_device, headless)
-        
+    
     def reset_idx(self, env_ids, init=False):
         super().reset_idx(env_ids, init)
         if len(env_ids) != 0:
@@ -36,13 +35,13 @@ class G1MimicAMP(G1Mimic):
         amp_obs_flat = self._amp_obs_buf.view(-1, self.get_num_amp_obs())
         self.extras["amp_obs"] = amp_obs_flat
         return
-            
+    
     def _compute_amp_observations(self, env_ids=None):
         """计算AMP观测，使用G1的下半身关键点"""
         # 使用G1的下半身关键点：pelvis, 左髋、左膝、左踝、右髋、右膝、右踝
         # 根据G1 URDF分析结果：pelvis(0), left_hip_pitch_link(2), left_knee_link(5), left_ankle_pitch_link(6),
         # right_hip_pitch_link(8), right_knee_link(11), right_ankle_pitch_link(12)
-        lower_body_key_ids = torch.tensor([0, 2, 5, 6, 8, 11, 12], device=self.device)
+        lower_body_key_ids = torch.tensor([2, 4, 6, 8, 10, 12], device=self.device)
         
         # 确保索引不超出范围
         max_body_idx = self.rigid_body_states.shape[1] - 1
@@ -70,8 +69,8 @@ class G1MimicAMP(G1Mimic):
             self._curr_amp_obs_buf[env_ids] = build_amp_observations_curr(self.root_states[env_ids, :3], self.base_quat[env_ids], self.base_lin_vel[env_ids], self.base_ang_vel[env_ids],
                                                                      self.dof_pos[env_ids], self.dof_vel[env_ids],
                                                                      cur_key_body_pos_local[env_ids] )
-            return
-            
+        return
+    
     ######### demonstrations #########
     def fetch_amp_obs_demo(self, num_samples):
         """从G1的motion数据中获取demo观测"""
@@ -119,7 +118,7 @@ class G1MimicAMP(G1Mimic):
         # dof_pos, dof_vel = self.reindex_dof_pos_vel(dof_pos, dof_vel)
         
         # 只使用下半身关键点数据
-        lower_body_key_ids = torch.tensor([0, 2, 5, 6, 8, 11, 12], device=self.device)
+        lower_body_key_ids = torch.tensor([2, 4, 6, 8, 10, 12], device=self.device)
         if local_key_body_pos.shape[1] > max(lower_body_key_ids):
             local_key_body_pos_lower = local_key_body_pos[:, lower_body_key_ids, :]
         else:

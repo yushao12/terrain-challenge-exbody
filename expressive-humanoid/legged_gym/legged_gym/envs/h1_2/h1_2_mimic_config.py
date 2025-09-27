@@ -31,7 +31,7 @@
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 
 
-class G1MimicCfg( LeggedRobotCfg ):
+class H1_2MimicCfg( LeggedRobotCfg ):
     class sim:
         dt = 0.005
         substeps = 1
@@ -85,7 +85,7 @@ class G1MimicCfg( LeggedRobotCfg ):
         # 新增：未达下一个目标点的时间阈值（秒），用于早停验证
         no_next_goal_time_s = 8.0
         
-        num_policy_actions = 12  # G1有12个DOF
+        num_policy_actions = 12  # H1_2有12个DOF
         
         # 添加goal相关的配置
         next_goal_threshold = 0.2  # 到达goal的阈值
@@ -93,37 +93,56 @@ class G1MimicCfg( LeggedRobotCfg ):
         reach_goal_delay = 0.1     # 到达goal后的延迟时间
 
     class init_state( LeggedRobotCfg.init_state ):
-        pos = [0.0, 0.0, 0.9]  # x,y,z [m] - 设置合适的初始高度
-        default_joint_angles = { # = target angles [rad] when action = 0.0 - 按照URDF顺序
-           'left_hip_pitch_joint' : -0.1,  # 索引0: URDF顺序
-           'left_hip_roll_joint' : 0,      # 索引1: URDF顺序
-           'left_hip_yaw_joint' : 0. ,     # 索引2: URDF顺序
-           'left_knee_joint' : 0.3,        # 索引3: URDF顺序
-           'left_ankle_pitch_joint' : -0.2, # 索引4: URDF顺序
-           'left_ankle_roll_joint' : 0,    # 索引5: URDF顺序
-           'right_hip_pitch_joint' : -0.1, # 索引6: URDF顺序
-           'right_hip_roll_joint' : 0,     # 索引7: URDF顺序
-           'right_hip_yaw_joint' : 0.,     # 索引8: URDF顺序
-           'right_knee_joint' : 0.3,       # 索引9: URDF顺序
-           'right_ankle_pitch_joint': -0.2, # 索引10: URDF顺序
-           'right_ankle_roll_joint' : 0,   # 索引11: URDF顺序
+        pos = [0.0, 0.0, 1.2]  # x,y,z [m] - 增加高度让机器人有空间站起来
+        default_joint_angles = { # = target angles [rad] when action = 0.0 - 参考原项目Humanoid-Terrain-Bench
+           # 腿部旋转关节
+           'left_hip_yaw_joint' : 0,
+           'left_hip_roll_joint' : 0,
+           'left_hip_pitch_joint' : 0.0,  # 尝试更直立的姿态
+           'left_knee_joint' : 0.0,       # 尝试更直立的姿态
+           'left_ankle_pitch_joint' : 0.0, # 尝试更直立的姿态
+           'left_ankle_roll_joint' : 0.0,
+           
+           'right_hip_yaw_joint' : 0,
+           'right_hip_roll_joint' : 0,
+           'right_hip_pitch_joint' : 0.0,  # 尝试更直立的姿态
+           'right_knee_joint' : 0.0,       # 尝试更直立的姿态
+           'right_ankle_pitch_joint' : 0.0, # 尝试更直立的姿态
+           'right_ankle_roll_joint' : 0.0,
+           
+           # 固定关节（参考原项目）
+           'torso_joint' : 0,
+           
+           'left_shoulder_pitch_joint' : 0.4,
+           'left_shoulder_roll_joint' : 0,
+           'left_shoulder_yaw_joint' : 0,
+           'left_elbow_pitch_joint' : 0.3,
+           
+           'right_shoulder_pitch_joint' : 0.4,
+           'right_shoulder_roll_joint' : 0,
+           'right_shoulder_yaw_joint' : 0,
+           'right_elbow_pitch_joint' : 0.3,
         }
 
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'P'
-        stiffness = {'hip_yaw': 100,
-                     'hip_roll': 100,
-                     'hip_pitch': 100,
-                     'knee': 150,
-                     'ankle': 40,
-                     }  # [N*m/rad]
-        damping = {  'hip_yaw': 2,
-                     'hip_roll': 2,
-                     'hip_pitch': 2,
-                     'knee': 4,
-                     'ankle': 2,
-                     }  # [N*m/rad]
+        stiffness = {
+            'hip_yaw_joint': 200.,
+            'hip_roll_joint': 200.,
+            'hip_pitch_joint': 200.,
+            'knee_joint': 300.,
+            'ankle_pitch_joint': 40.,
+            'ankle_roll_joint': 40.,
+        }  # [N*m/rad]
+        damping = {
+            'hip_yaw_joint': 2.5,
+            'hip_roll_joint': 2.5,
+            'hip_pitch_joint': 2.5,
+            'knee_joint': 4,
+            'ankle_pitch_joint': 2.0,
+            'ankle_roll_joint': 2.0,
+        }  # [N*m/rad]
         action_scale = 0.25
         decimation = 4
 
@@ -131,29 +150,16 @@ class G1MimicCfg( LeggedRobotCfg ):
         clip_actions = 10
 
     class asset( LeggedRobotCfg.asset ):
-        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/g1/g1_12dof_with_hand.urdf'
-        name = "g1_fix_upper"
-        torso_name = "pelvis"  # 这个参数是必需的，用于兼容H1的算法逻辑
+        file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/h1_2/h1_2_fix_arm.urdf'
+        name = "h1_2_fix"
+        # torso_name = "torso_link"  # 移除torso_name，使用props[0]与原项目保持一致
         foot_name = "ankle_roll"
         knee_name = "knee"
         penalize_contacts_on = ["hip", "knee"]
-        terminate_after_contacts_on = ["pelvis"]
-        self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
+        terminate_after_contacts_on = ["pelvis", "hip", "knee"]  # 与原项目一致，更严格的终止条件
+        self_collisions = 1  # 与原项目一致，禁用自碰撞
         flip_visual_attachments = False
-        
-        # 参考原项目的设置
-        density = 0.001
-        angular_damping = 0.
-        linear_damping = 0.
-        max_angular_velocity = 1000.
-        max_linear_velocity = 1000.
-        armature = 0.
-        thickness = 0.01
-        disable_gravity = False
-        fix_base_link = False  # 允许基座移动
-        collapse_fixed_joints = True  # 参考原项目，合并固定关节
-        replace_cylinder_with_capsule = True
-        default_dof_drive_mode = 3  # effort mode
+        collapse_fixed_joints = True  # 与原项目一致，合并固定关节
 
     class rewards( LeggedRobotCfg.rewards ):
         class scales:
@@ -183,9 +189,9 @@ class G1MimicCfg( LeggedRobotCfg ):
             # tracking_demo_lin_vel = 1
             # tracking_demo_ang_vel = 0.5
             # regularization rewards
-          #  lin_vel_z = -1.0
+            lin_vel_z = -1.0
            # ang_vel_xy = -0.4
-            # orientation = -1.
+            orientation = -1.
             #dof_acc = -3e-7
           #  collision = -10.
           #  action_rate = -0.1
@@ -194,11 +200,11 @@ class G1MimicCfg( LeggedRobotCfg ):
          #   energy = -1e-3
             #hip_pos = -0.5
            # dof_error = -0.1
-          #  feet_stumble = -1
-         #   feet_edge = -1
-          #  feet_drag = - 1
+            feet_stumble = -1
+            feet_edge = -1
+            feet_drag = - 1
           #  dof_pos_limits = -10.0
-           # feet_air_time = 10
+           # feet_air_time = 100
            # feet_height = 2
           #  feet_force = -3e-3
             
@@ -218,6 +224,9 @@ class G1MimicCfg( LeggedRobotCfg ):
         randomize_gravity = True
         gravity_rand_interval_s = 10
         gravity_range = [-0.1, 0.1]
+        # 与原项目H1_2保持一致，禁用质量和重心随机化
+        randomize_base_mass = False
+        randomize_base_com = False
 
     class noise():
         add_noise = True
@@ -280,12 +289,12 @@ class G1MimicCfg( LeggedRobotCfg ):
         stage2_duration = 1000000  # 阶段二训练步数
         foot_size_tolerance = 0.1  # 脚部大小容忍度（米）
 
-class G1MimicCfgPPO( LeggedRobotCfgPPO ):
+class H1_2MimicCfgPPO( LeggedRobotCfgPPO ):
     class policy( LeggedRobotCfgPPO.policy ):
         continue_from_last_std = False
-        text_feat_input_dim = G1MimicCfg.env.n_feature
+        text_feat_input_dim = H1_2MimicCfg.env.n_feature
         text_feat_output_dim = 16
-        feat_hist_len = G1MimicCfg.env.prop_hist_len
+        feat_hist_len = H1_2MimicCfg.env.prop_hist_len
         # actor_hidden_dims = [1024, 512]
         # critic_hidden_dims = [1024, 512]
     
@@ -297,7 +306,7 @@ class G1MimicCfgPPO( LeggedRobotCfgPPO ):
         policy_class_name = 'ActorCriticMimic'
         algorithm_class_name = 'PPOMimic'
         run_name = ''
-        experiment_name = 'g1_mimic'
+        experiment_name = 'h1_2_mimic'
         max_iterations = 50001 # number of policy updates
         save_interval = 500
 
@@ -305,14 +314,14 @@ class G1MimicCfgPPO( LeggedRobotCfgPPO ):
         train_with_estimated_states = False
         learning_rate = 1.e-4
         hidden_dims = [128, 64]
-        priv_states_dim = G1MimicCfg.env.n_priv
-        priv_start = G1MimicCfg.env.n_feature + G1MimicCfg.env.n_proprio + G1MimicCfg.env.n_demo + G1MimicCfg.env.n_scan
+        priv_states_dim = H1_2MimicCfg.env.n_priv
+        priv_start = H1_2MimicCfg.env.n_feature + H1_2MimicCfg.env.n_proprio + H1_2MimicCfg.env.n_demo + H1_2MimicCfg.env.n_scan
         
-        prop_start = G1MimicCfg.env.n_feature
-        prop_dim = G1MimicCfg.env.n_proprio
+        prop_start = H1_2MimicCfg.env.n_feature
+        prop_dim = H1_2MimicCfg.env.n_proprio
 
 
-class G1MimicDistillCfgPPO( G1MimicCfgPPO ):
+class H1_2MimicDistillCfgPPO( H1_2MimicCfgPPO ):
     class distill:
         num_demo = 3
         num_steps_per_env = 24
